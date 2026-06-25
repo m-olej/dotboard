@@ -1,0 +1,7 @@
+[package]
+name = "dotaemon"
+version = "0.1.0"
+edition = "2024"
+description = "Background daemon of dotboard, delegating all state management away from tui for rapid start-up time"
+
+[dependencies]

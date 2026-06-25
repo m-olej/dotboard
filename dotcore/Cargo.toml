@@ -1,0 +1,7 @@
+[package]
+name = "dotcore"
+version = "0.1.0"
+edition = "2024"
+description = "Core library of dotboard. Implementations of core engines and shared data structures"
+
+[dependencies]

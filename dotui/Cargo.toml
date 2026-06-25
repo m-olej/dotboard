@@ -1,0 +1,7 @@
+[package]
+name = "dotui"
+version = "0.1.0"
+edition = "2024"
+description = "Dotboard frontend terminal interface"
+
+[dependencies]
