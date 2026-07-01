@@ -5,3 +5,7 @@ edition = "2024"
 description = "Core library of dotboard. Implementations of core engines and shared data structures"
 
 [dependencies]
+tokio = { version = "1.52.3", features = ["full"] }
+tokio-util = { version = "0.7.18", features = ["codec"] }
+rkyv = "0.8.16"
+futures = "0.3.32"

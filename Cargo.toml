@@ -7,3 +7,7 @@ version = "0.0.1"
 authors = ["m-olej"]
 description = "Don't OverThink dashboard for minimalistic, tui-centered environments"
 readme = "README.md"
+
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }

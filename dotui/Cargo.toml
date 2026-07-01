@@ -5,3 +5,5 @@ edition = "2024"
 description = "Dotboard frontend terminal interface"
 
 [dependencies]
+dotcore = { path = "../dotcore" }
+tokio = { version = "1.52.3", features = ["full"] }
