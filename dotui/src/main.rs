@@ -1,3 +1,1 @@
-fn main() {
-    println!("Dotui");
-}
+fn main() { println!("Dotui"); }

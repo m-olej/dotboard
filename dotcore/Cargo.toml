@@ -7,5 +7,7 @@ description = "Core library of dotboard. Implementations of core engines and sha
 [dependencies]
 tokio = { version = "1.52.3", features = ["full"] }
 tokio-util = { version = "0.7.18", features = ["codec"] }
-rkyv = "0.8.16"
+rkyv = { version = "0.8.16", features = ["bytecheck", "unaligned"] }
 futures = "0.3.32"
+bytes = "1.12.0"
+num_enum = "0.7.6"

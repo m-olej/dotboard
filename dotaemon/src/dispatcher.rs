@@ -1,7 +1,12 @@
 use std::path::PathBuf;
 use bytes::Bytes;
-use std::thread;
+use std::thread::{self, JoinHandle};
 use tokio::sync::mpsc;
+use dotcore::ipc::translator::IpcHandler;
+use dotcore::events::tags::FrameTag;
+use dotcore::events::pingpong::PingPong;
+use crate::modules::pingpong::PingPongModule;
+
 
 pub struct Dispatcher {
     socket_path: PathBuf,
@@ -23,7 +28,15 @@ impl Dispatcher {
         }
     }
 
-    pub fn spawn() {
+    pub async fn run_dispatcher(mut rx_channel: mpsc::Receiver<(u8, Bytes)>) {
+        while let Some((tag, payload)) = rx_channel.recv().await {
+            match FrameTag::try_from(tag).unwrap() {
+               FrameTag::PingPong => <PingPongModule as IpcHandler<PingPong>>::spawn_task(payload),
+            }
+        }
+    }
+
+    pub fn spawn() -> JoinHandle<()> {
         // Dedicated OS thread to prevent any work-stealing interruptions
         thread::spawn(move || {
             // Async runtime for I/O interactions with UDS socket
@@ -34,8 +47,8 @@ impl Dispatcher {
 
             // Core dispatcher loop
             rt.block_on(async move {
-                
+                 
             });
-        });
+        })
     }
 }

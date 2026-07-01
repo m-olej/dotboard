@@ -1,8 +1,11 @@
+use bytes::Bytes;
+use rkyv::{Serialize, api::high::HighSerializer, ser::allocator::ArenaHandle, util::AlignedVec, rancor::Error};
 use tokio::net::{UnixListener, UnixStream};
 use tokio_util::{codec::{Framed, length_delimited::LengthDelimitedCodec}};
+use futures::{SinkExt, StreamExt};
 use std::io;
 
-const SOCKET_PATH: &str = "/tmp/dotboard.sock";
+pub const SOCKET_PATH: &str = "/tmp/dotboard.sock";
 
 /// Shared connection object defining the project communication interface
 struct IpcConnection {
@@ -20,9 +23,23 @@ impl IpcConnection {
     }
 
     /// Create `IpcConnection` wrapped `UnixStream`
-    pub async fn connect(self) -> io::Result<Self> {
-        let stream = Framed::new(UnixStream::connect(SOCKET_PATH).await?, LengthDelimitedCodec::new());
+    pub async fn connect(self, path: &str) -> io::Result<Self> {
+        let stream = Framed::new(UnixStream::connect(path).await?, LengthDelimitedCodec::new());
         Ok (Self { stream })
+    }
+
+    pub async fn send_event<T>(&mut self, event: &T) -> io::Result<()> 
+    where 
+        T: for<'a> Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, Error>>,
+    {
+        let aligned_bytes = rkyv::to_bytes::<Error>(event)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+        
+        let payload = Bytes::from(aligned_bytes.into_vec());
+
+        self.stream.send(payload).await?;
+
+        Ok(())
     }
 }
 
@@ -34,12 +51,12 @@ struct IpcListener {
 impl IpcListener {
 
     /// Create `IpcListener` wrapped `UnixListener`
-    pub fn bind() -> io::Result<Self> {
+    pub fn bind(path: &str) -> io::Result<Self> {
         
         // Remove stale socket if present, ignore possible OS 13 error
-        let _ = std::fs::remove_file(SOCKET_PATH);
+        let _ = std::fs::remove_file(path);
 
-        let listener = UnixListener::bind(SOCKET_PATH)?;
+        let listener = UnixListener::bind(path)?;
 
         Ok ( IpcListener { listener } )
     }
