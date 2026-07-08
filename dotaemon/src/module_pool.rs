@@ -1,38 +1,42 @@
-use tokio::sync::mpsc;
-use bytes::Bytes;
-
+use tokio::runtime::Runtime;
 
 pub struct ModulePool {
     worker_threads: usize,
-    rx_module: mpsc::Receiver<(u8, Bytes)>,
-    tx_comm: mpsc::Sender<(u8, Bytes)>
+    thread_pool: Option<Runtime>
 }
 
 impl ModulePool {
 
 pub fn new(
     worker_threads: usize,
-    rx_module: mpsc::Receiver<(u8, Bytes)>,
-    tx_comm: mpsc::Sender<(u8, Bytes)>
 ) -> Self {
-    Self {
-        worker_threads,
-            rx_module,
-            tx_comm,
+    Self 
+        {
+            worker_threads,
+            thread_pool: None
         }
     }
 
-    pub fn run(self) {
+    pub fn build(&mut self) {
         // Build async runtime of thread pool
         let rt = tokio::runtime::Builder::new_multi_thread()
+            .name("module-pool")
             .worker_threads(self.worker_threads)
             .enable_all()
             .build()
             .expect("Failed to build module thread pool runtime");
+        self.thread_pool = Some(rt);
+    }
 
-        // Core thread pool loop
-        rt.block_on(async move {
-            println!("Module Pool: running with {0} threads", self.worker_threads);
-        });
+    pub fn add<Fut>(&self, f: Fut) 
+    where
+        Fut: Future<Output = ()> + Send + 'static
+    {
+        match &self.thread_pool {
+            Some(rt) => {
+                rt.spawn(f);
+            },
+            None => eprintln!("Runtime not built yet")
+        };
     }
 }

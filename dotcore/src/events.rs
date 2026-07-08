@@ -1,2 +1,2 @@
-pub mod tags;
-pub mod pingpong;
+pub mod frames;
+pub mod tennis;

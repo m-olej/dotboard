@@ -1,10 +1,13 @@
+use dotcore::{events::frames::FrameTag, ipc::{connection::{IpcListener, SOCKET_PATH}, registry::ModuleRegistry}, modules::interface::DotModule};
+use tokio::sync::{mpsc, broadcast};
 use bytes::Bytes;
-use tokio::sync::mpsc;
-use dispatcher::Dispatcher;
-use module_pool::ModulePool;
-use std::{path::PathBuf, str::FromStr};
-use dotcore::ipc::connection::SOCKET_PATH;
 
+
+// import modules //
+use modules::tennis::TennisModule;
+use crate::{daemon::Daemon, module_pool::ModulePool};
+
+mod daemon;
 mod dispatcher;
 mod module_pool;
 mod modules;
@@ -13,20 +16,29 @@ mod modules;
 fn main() {
     println!("Dotaemon starting");
 
-    let (tx_comm, rx_comm) = mpsc::channel::<(u8, Bytes)>(1024);
-    let (tx_module, rx_module) = mpsc::channel::<(u8, Bytes)>(1024);
+    // Global egrees bus
+    let (global_egress_tx, _) = broadcast::channel::<Bytes>(1024);
 
-    let socket_path = PathBuf::from_str(SOCKET_PATH).unwrap();
+    let mut registry = ModuleRegistry::new(global_egress_tx.clone());
 
-    Dispatcher::new(socket_path, rx_comm, tx_module);
-    let dispatcher_handle = Dispatcher::spawn();
+    // Register modules for communication //
 
-    let worker_pool = ModulePool::new(4, rx_module, tx_comm);
+    let (tennis_rx, tennis_tx) = registry.register(FrameTag::Tennis as u8, 128);
+    
+    // Register modules for communication //
 
-    worker_pool.run(); 
+    let router = registry.build();
 
-    match dispatcher_handle.join() {
-        Ok(_) => println!("Dotaemon stopped"),
-        Err(e) => eprintln!("Error during shutdown of Dotaemon: {e:?}")
-    }
+    // Runs in the background
+    let mut module_pool = ModulePool::new(4);
+    module_pool.build();
+
+    // Place modules into the ModulePool runtime
+
+    module_pool.add(TennisModule::init(tennis_rx, tennis_tx));
+
+    // Place modules into the ModulePool runtime
+
+    Daemon::run(global_egress_tx, router);
+
 }

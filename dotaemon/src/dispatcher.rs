@@ -1,54 +1,60 @@
-use std::path::PathBuf;
-use bytes::Bytes;
-use std::thread::{self, JoinHandle};
-use tokio::sync::mpsc;
-use dotcore::ipc::translator::IpcHandler;
-use dotcore::events::tags::FrameTag;
-use dotcore::events::pingpong::PingPong;
-use crate::modules::pingpong::PingPongModule;
+use bytes::{Buf, Bytes};
+use dotcore::ipc::registry::Router;
+use tokio::sync::{broadcast};
+use dotcore::ipc::connection::IpcConnection;
+use futures::{SinkExt, StreamExt};
 
-
-pub struct Dispatcher {
-    socket_path: PathBuf,
-    rx_comm: mpsc::Receiver<(u8, Bytes)>,
-    tx_module: mpsc::Sender<(u8, Bytes)>
-} 
+pub struct Dispatcher;
 
 impl Dispatcher {
 
-    pub fn new(
-        socket_path: PathBuf,
-        rx_comm: mpsc::Receiver<(u8, Bytes)>,
-        tx_module: mpsc::Sender<(u8, Bytes)>
-    ) -> Self {
-        Self {
-            socket_path,
-            rx_comm,
-            tx_module
-        }
-    }
+    // Creates 2 async tasks for concurrent reading and writing
+    // Ensures cancellation safety (unlike tokio::select!)
+    pub async fn run(
+        connection: IpcConnection,
+        router: Router,
+        mut egress_rx: broadcast::Receiver<Bytes>
+    ) {
+        
+        // tx_sink:     Daemon -> Client
+        // rx_stream:   Client -> Daemon
+        let (mut tx_sink, mut rx_stream) = connection.into_split();
 
-    pub async fn run_dispatcher(mut rx_channel: mpsc::Receiver<(u8, Bytes)>) {
-        while let Some((tag, payload)) = rx_channel.recv().await {
-            match FrameTag::try_from(tag).unwrap() {
-               FrameTag::PingPong => <PingPongModule as IpcHandler<PingPong>>::spawn_task(payload),
+        // Receiver (Client -> Daemon) //
+        // Receives:    tagged serialized frame from TUI
+        // Sends:       Message frame including message tag and serialized payload
+        tokio::spawn(async move {
+            while let Some(result) = rx_stream.next().await {
+
+                let mut raw_payload = match result {
+                    Ok(payload) => payload,
+                    Err(e) => {eprintln!("Connection closed abruptly: {e}"); break;}
+                };
+
+                let module_tag = raw_payload.get_u8();
+                let message_tag = raw_payload.get_u8();
+                let payload = raw_payload.freeze();
+
+                router.route(module_tag, message_tag, payload).await;
             }
-        }
-    }
+        });
 
-    pub fn spawn() -> JoinHandle<()> {
-        // Dedicated OS thread to prevent any work-stealing interruptions
-        thread::spawn(move || {
-            // Async runtime for I/O interactions with UDS socket
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("Failed to build dispatcher runtime");
+        // Sender (Module -> Daemon -> client) //
+        // Receives:    tagged frame serialized by module
+        // Sends:       the same unchanged data through UDS to TUI 
+        let egress_task = tokio::spawn(async move {
+            loop {
+                let raw_payload = egress_rx.recv().await.unwrap(); 
+                if let Err(e) = tx_sink.send(raw_payload).await {
+                    eprintln!("Connection closed abruptly: {e}");
+                    break;
+                }
+            }
+        });
 
-            // Core dispatcher loop
-            rt.block_on(async move {
-                 
-            });
-        })
+        egress_task.abort();
+        println!("Dispatcher client connection closed");
     }
 }
+
+
